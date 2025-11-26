@@ -11,6 +11,8 @@
 
     <!-- Tailwind CSS --><script src="https://cdn.tailwindcss.com"></script>
     
+    <!-- html2pdf.js pour l'export PDF --><script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
     <!-- Configuration Tailwind pour la charte Assurance Maladie --><script>
         tailwind.config = {
             theme: {
@@ -20,6 +22,8 @@
                         'am-purple': '#A05BB6', // Pictogrammes & Bordures
                         'am-dark': '#1e293b',
                         'am-grey': '#545859',   // Gris spécifique demandé
+                        'am-green': '#00AB8E',  // Vert Etablissement A
+                        'am-red': '#E04F39',    // Rouge Etablissement B
                     },
                     fontFamily: {
                         sans: ['"Source Sans Pro"', 'Arial', 'sans-serif'],
@@ -41,6 +45,76 @@
     
     <style>
         body { font-family: 'Source Sans Pro', Arial, sans-serif; }
+        
+        /* --- STYLES SPÉCIFIQUES POUR L'EXPORT PDF --- */
+        .compact-pdf {
+            /* Largeur fixe A4 pour éviter la coupure à droite */
+            width: 790px !important; 
+            max-width: 790px !important;
+            margin: 0 auto !important;
+            padding: 20px 40px !important;
+            background: white !important;
+            font-size: 12px !important; /* Base font reduction */
+        }
+
+        /* Masquer l'historique en PDF pour gagner de la place */
+        .compact-pdf .pdf-hide {
+            display: none !important;
+        }
+
+        /* Réduction des espaces verticaux */
+        .compact-pdf .space-y-6 > :not([hidden]) ~ :not([hidden]) {
+            margin-top: 10px !important;
+            margin-bottom: 10px !important;
+        }
+
+        /* Header Compact */
+        .compact-pdf header {
+            padding: 10px !important;
+            margin-bottom: 10px !important;
+        }
+        .compact-pdf header h1 {
+            font-size: 16px !important;
+        }
+        .compact-pdf header svg {
+            width: 32px !important;
+            height: 32px !important;
+            padding: 4px !important;
+        }
+
+        /* Diagramme Compact */
+        .compact-pdf .border {
+            border-width: 1px !important;
+        }
+        .compact-pdf .p-6 {
+            padding: 10px !important;
+        }
+        .compact-pdf .w-16 { width: 40px !important; } /* Icon circles smaller */
+        .compact-pdf .h-16 { height: 40px !important; }
+
+        /* Flèches "Hardcoded" en CSS pour le PDF (plus fiable que SVG) */
+        .compact-pdf .arrow-line {
+            height: 2px !important;
+        }
+        
+        /* Résultats Compacts */
+        .compact-pdf h3 {
+            font-size: 18px !important;
+        }
+        .compact-pdf .text-2xl {
+            font-size: 16px !important;
+        }
+        .compact-pdf .p-8 {
+            padding: 15px !important;
+        }
+        .compact-pdf .grid {
+            gap: 10px !important;
+        }
+        
+        /* Footer masqué */
+        .compact-pdf footer {
+            display: none !important;
+        }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-800">
@@ -48,10 +122,9 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState } = React;
+        const { useState, useMemo } = React;
         
         // --- ICONS ---
-        // Toutes les icônes utilisent le standard Lucide (viewBox 0 0 24 24)
         const Icons = {
             Ambulance: (props) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M10 10H6"/><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.28a1 1 0 0 0-.684-.948l-1.923-.641a1 1 0 0 1-.578-.502l-1.539-3.076A1 1 0 0 0 16.382 8H14"/><path d="M8 18a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/><path d="M18 18a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg>,
             ArrowRight: (props) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>,
@@ -71,39 +144,26 @@
             BriefcaseMedical: (props) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M12 11v4"/><path d="M14 13h-4"/><path d="M16 6V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/><path d="M18 6v14"/><path d="M6 6v14"/><rect width="20" height="14" x="2" y="6" rx="2"/></svg>,
             HelpCircle: (props) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>,
             Accessibility: (props) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><circle cx="16" cy="4" r="1"/><path d="m18 19 1-7-6 1"/><path d="m5 8 3-3 5.5 3-2.36 4.5"/><path d="M4.24 14.5a5 5 0 0 0 6.88 6"/><path d="M13.76 17.5a5 5 0 0 0-6.88-6"/></svg>,
-            
-            // --- ICONES CORRIGÉES ---
-            
-            // HouseHeart : Version officielle Lucide fournie
             HouseHeart: (props) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M8.62 13.8A2.25 2.25 0 1 1 12 10.836a2.25 2.25 0 1 1 3.38 2.966l-2.626 2.856a.998.998 0 0 1-1.507 0z"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>,
-            
-            // Hospital : Version officielle Lucide fournie (MCO)
             Hospital: (props) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M12 7v4"/><path d="M14 21v-3a2 2 0 0 0-4 0v3"/><path d="M14 9h-4"/><path d="M18 11h2a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2h2"/><path d="M18 21V5a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16"/></svg>,
-
-            // Brain : Version officielle Lucide fournie
             Brain: (props) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M12 18V5"/><path d="M15 13a4.17 4.17 0 0 1-3-4 4.17 4.17 0 0 1-3 4"/><path d="M17.598 6.5A3 3 0 1 0 12 5a3 3 0 1 0-5.598 1.5"/><path d="M17.997 5.125a4 4 0 0 1 2.526 5.77"/><path d="M18 18a4 4 0 0 0 2-7.464"/><path d="M19.967 17.483A4 4 0 1 1 12 18a4 4 0 1 1-7.967-.517"/><path d="M6 18a4 4 0 0 1-2-7.464"/><path d="M6.003 5.125a4 4 0 0 0-2.526 5.77"/></svg>,
-
-            // SquareCheck : Nouvelle icône pour HAD Oui
             SquareCheck: (props) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><rect width="18" height="18" x="3" y="3" rx="2"/><path d="m9 12 2 2 4-4"/></svg>,
-
-            // SquareX : Nouvelle icône pour HAD Non
             SquareX: (props) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>,
-
-            // HelpCircle : Utilisé pour "Je ne sais pas"
-            HelpCircle: (props) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>,
+            Scale: (props) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/></svg>,
+            User: (props) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>,
+            Download: (props) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
         };
 
         const { 
-            Ambulance, ArrowRight, ArrowLeft, Info, RotateCcw, Building2, 
+            Ambulance, ArrowRight, ArrowLeft, ArrowLeftRight, Info, RotateCcw, Building2, 
             Euro, FileText, AlertTriangle, CheckCircle2, Home, Activity, 
             LogOut, LogIn, Stethoscope, BriefcaseMedical, HelpCircle,
-            Accessibility, Brain, HouseHeart, Hospital, SquareCheck, SquareX
+            Accessibility, Brain, HouseHeart, Hospital, SquareCheck, SquareX, Scale, User, Download
         } = Icons;
 
         // --- DATA & LOGIC ---
 
         const QUESTIONS = {
-            // Etape 1 : Identité de l'utilisateur
             activity: {
                 id: 'activity',
                 text: "Quelle est l'activité de votre structure ?",
@@ -112,11 +172,10 @@
                     { id: 'smr', label: "SMR (Soins Médicaux et de Réadaptation)", icon: Accessibility },
                     { id: 'psy', label: "Psychiatrie", icon: Brain },
                     { id: 'had', label: "HAD (Hospitalisation à Domicile)", icon: HouseHeart },
-                    { id: 'dialyse_centre', label: "Centre de Dialyse", icon: Stethoscope },
-                    { id: 'dialyse_unite', label: "Unité de Dialyse (UDM / Autodialyse)", icon: Stethoscope },
+                    { id: 'dialyse_centre', label: "Centre de dialyse", icon: Stethoscope },
+                    { id: 'dialyse_unite', label: "Unité de dialyse (UDM / Autodialyse)", icon: Stethoscope },
                 ]
             },
-            // Etape 2 : Rôle
             role: {
                 id: 'role',
                 text: "Quel est votre rôle dans ce transport ?",
@@ -125,8 +184,6 @@
                     { id: 'receveur', label: "Établissement RECEVEUR (Le patient vient chez vous)", icon: LogIn },
                 ]
             },
-            
-            // QUESTION HAD ENVOYEUR
             transfert_had_lien_protocole: {
                 id: 'transfert_had_lien_protocole',
                 text: "Les soins à réaliser dans le cadre de ce transfert ont-ils un lien direct avec le protocole de prise en charge HAD ?",
@@ -135,8 +192,6 @@
                     { id: 'non', label: "Non (Le transfert est pour un motif externe, sans lien avec l'HAD)", icon: SquareX },
                 ]
             },
-            
-            // NOUVELLE QUESTION HAD RECEVEUR
             transfert_had_lien_protocole_receveur: {
                 id: 'transfert_had_lien_protocole_receveur',
                 text: "Les soins à réaliser dans le cadre de ce transfert ont-ils un lien direct avec le protocole de prise en charge HAD de l'établissement envoyeur ?",
@@ -146,8 +201,6 @@
                     { id: 'jsp', label: "Je ne sais pas (Le doute doit être levé)", icon: HelpCircle },
                 ]
             },
-
-            // Etape 3 (Si Envoyeur) : Statut patient
             status_patient_depart: {
                 id: 'status_patient_depart',
                 text: "Quel est le statut administratif du patient chez vous au moment du départ ?",
@@ -156,8 +209,6 @@
                     { id: 'externe', label: "Non Hospitalisé (Consultation externe, Passage Urgences simple)", icon: LogOut },
                 ]
             },
-
-            // Etape 4 (Si Envoyeur + Hosp) : Destination Globale
             destination_type: {
                 id: 'destination_type',
                 text: "Vers quel type de structure le patient est-il transféré ?",
@@ -166,14 +217,12 @@
                     { id: 'es_smr', label: "SMR (Soins Médicaux et de Réadaptation)", icon: Accessibility },
                     { id: 'es_psy', label: "Psychiatrie", icon: Brain },
                     { id: 'had', label: "HAD (Hospitalisation à Domicile)", icon: HouseHeart },
-                    { id: 'es_dialyse_centre', label: "Centre de Dialyse", icon: Stethoscope },
-                    { id: 'es_dialyse_unite', label: "Unité de Dialyse (UDM / Autodialyse)", icon: Stethoscope },
+                    { id: 'es_dialyse_centre', label: "Centre de dialyse", icon: Stethoscope },
+                    { id: 'es_dialyse_unite', label: "Unité de dialyse (UDM / Autodialyse)", icon: Stethoscope },
                     { id: 'liberal', label: "Cabinet libéral", icon: BriefcaseMedical },
-                    { id: 'domicile', label: "Domicile", icon: Home }, // Option conservée par défaut, filtrée si besoin
+                    { id: 'domicile', label: "Domicile", icon: Home },
                 ]
             },
-
-            // Etape 5 (Si vers structure soins) : Nature du transfert
             nature_transfert: {
                 id: 'nature_transfert',
                 text: "Quelle est la nature du transfert ?",
@@ -182,8 +231,6 @@
                     { id: 'provisoire', label: "Transfert Provisoire (Aller-Retour)", icon: RotateCcw },
                 ]
             },
-
-            // Etape 5-bis (Si Provisoire) : Motif détaillé
             detail_provisoire: {
                 id: 'detail_provisoire',
                 text: "Quel est le motif précis du transfert provisoire ?",
@@ -197,8 +244,6 @@
                     { id: 'acte_liberal', label: "Acte / Consult. en Cabinet Libéral", icon: FileText },
                 ]
             },
-
-            // Etape 6 (Si Permission)
             motif_permission: {
                 id: 'motif_permission',
                 text: "Quel est le motif de la permission ?",
@@ -207,19 +252,14 @@
                     { id: 'convenance', label: "Convenance personnelle", icon: Home },
                 ]
             },
-
-            // Etape 3 (Si Receveur) : Provenance
             provenance_type: {
                 id: 'provenance_type',
                 text: "D'où vient le patient ?",
                 options: [
                     { id: 'autre_es', label: "D'un autre Établissement de Santé", icon: Hospital },
-                    // MODIFICATION ICI : Ajout de la précision
                     { id: 'domicile', label: "De son Domicile (hors hospitalisation à domicile)", icon: Home }, 
                 ]
             },
-
-            // Etape 3-bis (Si Receveur + Autre ES) : Activité de l'envoyeur
             activity_sender: {
                 id: 'activity_sender',
                 text: "Quelle est l'activité de la structure où le patient est hospitalisé ?",
@@ -228,13 +268,11 @@
                     { id: 'smr', label: "SMR (Soins Médicaux et de Réadaptation)", icon: Accessibility },
                     { id: 'psy', label: "Psychiatrie", icon: Brain },
                     { id: 'had', label: "HAD (Hospitalisation à Domicile)", icon: HouseHeart },
-                    { id: 'dialyse_centre', label: "Centre de Dialyse", icon: Stethoscope },
-                    { id: 'dialyse_unite', label: "Unité de Dialyse (UDM / Autodialyse)", icon: Stethoscope },
+                    { id: 'dialyse_centre', label: "Centre de dialyse", icon: Stethoscope },
+                    { id: 'dialyse_unite', label: "Unité de dialyse (UDM / Autodialyse)", icon: Stethoscope },
                     { id: 'jsp', label: "Je ne sais pas", icon: HelpCircle },
                 ]
             },
-
-            // Etape 4 (Si Receveur + Provenance ES) : Motif Venue
             motif_venue: {
                 id: 'motif_venue',
                 text: "Pour quel motif le patient vient-il chez vous ?",
@@ -270,7 +308,256 @@
             ]
         };
 
-        // --- COMPONENT ---
+        // --- HELPER FOR COLORS ---
+        const getPayerStyle = (payerString, userRole) => {
+            if (!payerString) return { color: "text-slate-300", hex: "#cbd5e1" };
+            const p = payerString.toLowerCase();
+            
+            // Ordre de priorité : Patient > AM > Envoyeur/Receveur
+            if (p.includes("patient")) return { color: "text-am-purple", hex: "#A05BB6" };
+            if (p.includes("assurance maladie")) return { color: "text-am-blue", hex: "#0C419A" };
+            
+            // Pour Envoyeur/Receveur, on vérifie qui paye
+            if (p.includes("envoyeur") || p.includes("origine") || p.includes("établissement a")) return { color: "text-am-green", hex: "#00AB8E" };
+            if (p.includes("receveur") || p.includes("établissement b")) return { color: "text-am-red", hex: "#E04F39" };
+            
+            // Si c'est "Votre Établissement", on utilise le rôle pour déterminer la couleur (A ou B)
+            if (p.includes("votre établissement")) {
+                if (userRole === 'envoyeur') return { color: "text-am-green", hex: "#00AB8E" }; // Vous êtes A
+                if (userRole === 'receveur') return { color: "text-am-red", hex: "#E04F39" };   // Vous êtes B
+            }
+            
+            // Fallback
+            return { color: "text-amber-600", hex: "#d97706" };
+        };
+
+        // --- VISUAL DIAGRAM COMPONENT ---
+        const TransportDiagram = ({ answers, result }) => {
+            
+            const getTypeLabel = (typeKey) => {
+                 const map = {
+                    'mco': "MCO",
+                    'es_mco': "MCO",
+                    'smr': "SMR",
+                    'es_smr': "SMR",
+                    'psy': "Psychiatrie",
+                    'es_psy': "Psychiatrie",
+                    'had': "HAD",
+                    'dialyse_centre': "Centre de dialyse",
+                    'es_dialyse_centre': "Centre de dialyse",
+                    'dialyse_unite': "Unité de dialyse",
+                    'es_dialyse_unite': "Unité de dialyse",
+                    'liberal': "Cabinet Libéral",
+                    'domicile': "Domicile",
+                    'jsp': "Inconnu"
+                };
+                return map[typeKey] || "";
+            }
+
+            // Helper to get icon component based on answer key
+            const getIconForType = (typeKey) => {
+                const map = {
+                    'mco': Icons.Hospital,
+                    'es_mco': Icons.Hospital,
+                    'smr': Icons.Accessibility,
+                    'es_smr': Icons.Accessibility,
+                    'psy': Icons.Brain,
+                    'es_psy': Icons.Brain,
+                    'had': Icons.HouseHeart,
+                    'dialyse_centre': Icons.Stethoscope,
+                    'es_dialyse_centre': Icons.Stethoscope,
+                    'dialyse_unite': Icons.Stethoscope,
+                    'es_dialyse_unite': Icons.Stethoscope,
+                    'liberal': Icons.BriefcaseMedical,
+                    'domicile': Icons.Home,
+                    'jsp': Icons.HelpCircle
+                };
+                return map[typeKey] || Icons.Building2; // Building2 as fallback
+            };
+
+            // Determine Nodes
+            let IconA = Icons.Building2;
+            let labelA = "Etablissement A";
+            let subLabelA = "";
+            let colorA = "text-slate-300";
+            let borderA = "border-slate-100";
+            let bgA = "bg-slate-50";
+
+            let IconB = Icons.Building2;
+            let labelB = "Etablissement B";
+            let subLabelB = "";
+            let colorB = "text-slate-300";
+            let borderB = "border-slate-100";
+            let bgB = "bg-slate-50";
+            
+            // --- Determine Arrow & Ambulance Bubble Color based on Result Payer ---
+            const payerStyle = result ? getPayerStyle(result.payer, answers.role) : { color: "text-slate-300", hex: "#cbd5e1" };
+            const arrowColorClass = payerStyle.color;
+            
+            // Determine Bubble Styles based on payer color class (mapping logic)
+            let bubbleBorder = "border-slate-200";
+            let bubbleBg = "bg-white";
+            
+            if (arrowColorClass.includes("text-am-green")) {
+                bubbleBorder = "border-am-green";
+                bubbleBg = "bg-am-green/20";
+            } else if (arrowColorClass.includes("text-am-red")) {
+                bubbleBorder = "border-am-red";
+                bubbleBg = "bg-am-red/20";
+            } else if (arrowColorClass.includes("text-am-purple")) {
+                bubbleBorder = "border-am-purple";
+                bubbleBg = "bg-am-purple/20";
+            } else if (arrowColorClass.includes("text-am-blue")) {
+                bubbleBorder = "border-am-blue";
+                bubbleBg = "bg-am-blue/20";
+            }
+
+            // --- COLOR LOGIC: A=Green, B=Red ---
+            const ACTIVE_COLOR_A_TEXT = "text-am-green";
+            const ACTIVE_COLOR_A_BORDER = "border-am-green";
+            const ACTIVE_COLOR_A_BG = "bg-am-green/20";
+            
+            const ACTIVE_COLOR_B_TEXT = "text-am-red";
+            const ACTIVE_COLOR_B_BORDER = "border-am-red";
+            const ACTIVE_COLOR_B_BG = "bg-am-red/20";
+
+            const LABEL_COLOR = "text-am-grey"; // #545859
+
+            if (answers.role === 'envoyeur') {
+                if (answers.activity) {
+                    IconA = getIconForType(answers.activity);
+                    colorA = ACTIVE_COLOR_A_TEXT;
+                    borderA = ACTIVE_COLOR_A_BORDER;
+                    bgA = ACTIVE_COLOR_A_BG;
+                    subLabelA = getTypeLabel(answers.activity);
+                }
+                if (answers.destination_type) {
+                    IconB = getIconForType(answers.destination_type);
+                    colorB = ACTIVE_COLOR_B_TEXT;
+                    borderB = ACTIVE_COLOR_B_BORDER;
+                    bgB = ACTIVE_COLOR_B_BG;
+                    subLabelB = getTypeLabel(answers.destination_type);
+                }
+            } else if (answers.role === 'receveur') {
+                if (answers.provenance_type === 'domicile') {
+                    IconA = Icons.Home;
+                    colorA = ACTIVE_COLOR_A_TEXT;
+                    borderA = ACTIVE_COLOR_A_BORDER;
+                    bgA = ACTIVE_COLOR_A_BG;
+                    subLabelA = "Domicile";
+                } else if (answers.activity_sender) {
+                    IconA = getIconForType(answers.activity_sender);
+                    colorA = ACTIVE_COLOR_A_TEXT;
+                    borderA = ACTIVE_COLOR_A_BORDER;
+                    bgA = ACTIVE_COLOR_A_BG;
+                    subLabelA = getTypeLabel(answers.activity_sender);
+                }
+
+                if (answers.activity) {
+                    IconB = getIconForType(answers.activity);
+                    colorB = ACTIVE_COLOR_B_TEXT;
+                    borderB = ACTIVE_COLOR_B_BORDER;
+                    bgB = ACTIVE_COLOR_B_BG;
+                    subLabelB = getTypeLabel(answers.activity);
+                }
+            }
+
+            // Add "(Vous)"
+            if (answers.role === 'envoyeur') {
+                subLabelA = <>{subLabelA} <span className="text-am-grey block font-extrabold text-xs">(Vous)</span></>;
+            } else if (answers.role === 'receveur') {
+                subLabelB = <>{subLabelB} <span className="text-am-grey block font-extrabold text-xs">(Vous)</span></>;
+            }
+
+            // Determine Arrow Type
+            const isProvisoire = answers.nature_transfert === 'provisoire' || 
+                                 answers.detail_provisoire || 
+                                 answers.motif_venue === 'seance' || 
+                                 answers.motif_venue === 'consultation';
+            
+            // --- REPLACEMENT OF SVG ARROW WITH HTML/CSS CONSTRUCTION FOR PDF STABILITY ---
+            // This renders a div line + arrow head which survives html2canvas export much better
+            const ArrowConstruction = () => (
+                <div className="relative w-32 md:w-48 h-8 flex items-center justify-center">
+                    {/* The Line */}
+                    <div className={`w-full h-[2px] rounded-full bg-current ${arrowColorClass} arrow-line`}></div>
+                    
+                    {/* Right Head */}
+                    <div className={`absolute -right-1 top-1/2 -translate-y-1/2 ${arrowColorClass}`}>
+                         <ArrowRight className="w-6 h-6" />
+                    </div>
+
+                    {/* Left Head (if double arrow) */}
+                    {isProvisoire && (
+                        <div className={`absolute -left-1 top-1/2 -translate-y-1/2 ${arrowColorClass} rotate-180`}>
+                             <ArrowRight className="w-6 h-6" />
+                        </div>
+                    )}
+                </div>
+            );
+
+            return (
+                <div className="bg-white border border-slate-200 rounded-lg p-6 mb-6 shadow-sm">
+                    <p className="text-sm text-slate-400 mb-6 italic text-center w-full border-b border-slate-100 pb-2">Situation du patient</p>
+                    <div className="flex items-start justify-center gap-2 md:gap-4 px-2">
+                        {/* Node A */}
+                        <div className="flex flex-col items-center gap-1 w-28 text-center relative">
+                            <p className={`font-bold text-xs uppercase tracking-wider mb-1 ${LABEL_COLOR}`}>{labelA}</p>
+                            
+                            <div className={`relative w-16 h-16 rounded-full flex items-center justify-center border-2 transition-all duration-300 ${borderA} ${bgA}`}>
+                                {/* Patient Icon Indicator - Bottom Left Position */}
+                                <div className="absolute -bottom-2 -left-2 z-10 bg-white rounded-full p-1 shadow-sm border border-slate-100">
+                                    <div className="flex flex-col items-center">
+                                        <User className="w-5 h-5 text-slate-700" />
+                                    </div>
+                                </div>
+                                <IconA className={`w-8 h-8 ${colorA}`} />
+                            </div>
+
+                            <div className="min-h-[2.5rem] flex flex-col justify-start w-full">
+                                <p className={`font-bold text-xs leading-tight whitespace-nowrap overflow-hidden text-ellipsis ${LABEL_COLOR}`}>{subLabelA}</p>
+                            </div>
+                        </div>
+
+                        {/* Middle Arrow Section */}
+                        <div className="px-2 flex flex-col items-center shrink-0 relative">
+                             {/* Spacer matches height of 'Label A/B' text approx to align arrow container with circles */}
+                            <div className="h-6 mb-1"></div>
+
+                            {/* Container for Arrow and Ambulance Bubble - Height 16 matches Circle Height 16 */}
+                            <div className="h-16 flex items-center justify-center relative">
+                                
+                                {/* ROBUST HTML ARROW instead of SVG path */}
+                                <ArrowConstruction />
+                                
+                                {/* Ambulance Bubble - CENTERED ON TOP OF ARROW (PAR-DESSUS) */}
+                                <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 w-10 h-10 flex items-center justify-center shadow-sm bg-white z-10 ${bubbleBorder}`}>
+                                    {/* Inner tinted layer to match design logic but keeping white bg below to mask arrow */}
+                                    <div className={`w-full h-full rounded-full flex items-center justify-center ${bubbleBg}`}>
+                                        <Ambulance className={`w-5 h-5 ${arrowColorClass}`} />
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div className="min-h-[2.5rem]"></div>
+                        </div>
+
+                        {/* Node B */}
+                        <div className="flex flex-col items-center gap-1 w-28 text-center">
+                            <p className={`font-bold text-xs uppercase tracking-wider mb-1 ${LABEL_COLOR}`}>{labelB}</p>
+                            <div className={`w-16 h-16 rounded-full flex items-center justify-center border-2 transition-all duration-300 ${borderB} ${bgB}`}>
+                                <IconB className={`w-8 h-8 ${colorB}`} />
+                            </div>
+                            <div className="min-h-[2.5rem] flex flex-col justify-start w-full">
+                                <p className={`font-bold text-xs leading-tight whitespace-nowrap overflow-hidden text-ellipsis ${LABEL_COLOR}`}>{subLabelB}</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- MAIN APP COMPONENT ---
 
         const App = () => {
             const [history, setHistory] = useState([]);
@@ -290,8 +577,48 @@
                 const lastStepConfig = history[history.length - 1];
                 const newHistory = history.slice(0, -1);
                 setHistory(newHistory);
+                
+                // Rebuild answers from history to ensure diagram updates correctly
+                // We create a new object containing only answers from the remaining history steps
+                const newAnswers = newHistory.reduce((acc, curr) => ({
+                    ...acc,
+                    [curr.step]: curr.answer
+                }), {});
+                setAnswers(newAnswers);
+                
                 setCurrentStep(lastStepConfig.step);
                 if (result) setResult(null);
+            };
+
+            const handleExportPDF = () => {
+                // SCROLL TOP to prevent whitespace
+                window.scrollTo(0, 0);
+
+                const element = document.getElementById('simulation-container');
+                
+                // Add COMPACT MODE class
+                element.classList.add('compact-pdf');
+                document.body.classList.add('pdf-generating');
+
+                const opt = {
+                    margin:       0, // Zero margins, we handle padding inside CSS
+                    filename:     'simulation-article-80.pdf',
+                    image:        { type: 'jpeg', quality: 0.98 },
+                    html2canvas:  { 
+                        scale: 2, 
+                        useCORS: true,
+                        scrollY: 0,
+                        windowWidth: 790, // Match the CSS width exactly
+                        width: 790        // Force canvas width
+                    },
+                    jsPDF:        { unit: 'px', format: [790, 1120], orientation: 'portrait' } // Custom format close to A4 pixels
+                };
+                
+                html2pdf().set(opt).from(element).save().then(() => {
+                    // CLEANUP
+                    element.classList.remove('compact-pdf');
+                    document.body.classList.remove('pdf-generating');
+                });
             };
 
             // --- FILTER ---
@@ -320,7 +647,6 @@
 
                 // --- FILTRES HAD ENVOYEUR (Lien Protocole OUI) ---
                 if (currentStep === 'destination_type' && activity === 'had' && answers.transfert_had_lien_protocole === 'oui') {
-                    // Retirer 'Domicile' pour HAD Envoyeur avec lien protocole
                     options = options.filter(opt => opt.id !== 'domicile');
                 }
                 
@@ -333,23 +659,16 @@
                         const senderIsMCOGroup = ['mco', 'dialyse_centre', 'dialyse_unite'].includes(activity);
 
                         if (activity === 'had' && dest) {
-                            // RÈGLE HAD ENVOYEUR (Lien Protocole OUI) : Filtrage strict des motifs provisoires
                             if (dest === 'es_mco') {
-                                // MCO : Séance chimio/radio, PIE
                                 options = options.filter(opt => ['seance_es', 'pie'].includes(opt.id));
                             } else if (dest === 'es_smr' || dest === 'es_psy') {
-                                // SMR/PSY : PIA Séjour, PIA Externe
                                 options = options.filter(opt => ['pia_sejour', 'pia_externe'].includes(opt.id));
                             } else if (dest.includes('dialyse')) {
-                                // Dialyse Centre/Unité : Séance Dialyse
                                 options = options.filter(opt => ['seance_dialyse'].includes(opt.id));
                             } else {
-                                // Pour les autres structures (autre HAD), filtrer tous les motifs
                                 options = []; 
                             }
                         }
-                        
-                        // LOGIQUE STANDARD (si ce n'est pas HAD)
                         else if (dest === 'es_mco') {
                             options = options.filter(opt => opt.id !== 'seance_dialyse');
                             if (senderIsMCOGroup) {
@@ -397,18 +716,17 @@
                 if (currentStep === 'role') {
                     if (optionId === 'envoyeur') {
                         if (newAnswers.activity === 'had') {
-                             // HAD Envoyeur -> Nouvelle question sur le lien du protocole
                              setCurrentStep('transfert_had_lien_protocole');
                              return;
                         }
                         setCurrentStep('status_patient_depart');
                     } else {
                         if (newAnswers.activity === 'had') {
-                            // HAD Receveur -> Résultat direct Assurance Maladie
                             setResult({
                                 payer: "Assurance Maladie",
                                 detail: "Le transport est à la charge de l'Assurance Maladie car la structure HAD est l'établissement receveur.",
-                                code: "Aucun"
+                                code: "Aucun",
+                                legal: "Droit Commun (Art. L. 322-5 CSS)"
                             });
                             return;
                         }
@@ -417,29 +735,27 @@
                     return;
                 }
                 
-                // FLUX HAD ENVOYEUR (Lien Protocole)
                 if (currentStep === 'transfert_had_lien_protocole') {
                     if (optionId === 'non') {
-                        // Non lié au protocole -> Transport de droit commun (Assurance Maladie)
                         setResult({
                             payer: "Assurance Maladie",
                             detail: "Transport non lié au protocole HAD. Ces transports sont pris en charge par l'Assurance Maladie (Droit Commun).",
-                            code: "Aucun"
+                            code: "Aucun",
+                            legal: "Droit Commun (Art. L. 322-5 CSS)"
                         });
                         return;
                     }
-                    // Oui -> Continue à l'étape suivante pour déterminer Défnitif/Provisoire
                     setCurrentStep('destination_type');
                     return;
                 }
 
-                // --- RECEVEUR ---
                 if (currentStep === 'provenance_type') {
                     if (optionId === 'domicile') {
                         setResult({
                             payer: "Assurance Maladie",
                             detail: "Le patient vient de son domicile. Transport de droit commun (hors HAD).",
-                            code: "Aucun"
+                            code: "Aucun",
+                            legal: "Droit Commun (Art. L. 322-5 CSS)"
                         });
                     } else {
                         setCurrentStep('activity_sender');
@@ -449,7 +765,6 @@
 
                 if (currentStep === 'activity_sender') {
                     if (optionId === 'had') {
-                        // Receveur (non HAD) + Envoyeur HAD -> Nouvelle question sur le lien du protocole
                         setCurrentStep('transfert_had_lien_protocole_receveur');
                         return;
                     }
@@ -457,91 +772,87 @@
                     return;
                 }
                 
-                // FLUX HAD RECEVEUR (Lien Protocole)
                 if (currentStep === 'transfert_had_lien_protocole_receveur') {
                     if (optionId === 'non') {
-                        // Non lié au protocole -> Transport de droit commun (Assurance Maladie)
                         setResult({
                             payer: "Assurance Maladie",
                             detail: "Transport du patient HAD non lié à son protocole. Pris en charge par l'Assurance Maladie (Droit Commun).",
-                            code: "Aucun"
+                            code: "Aucun",
+                            legal: "Droit Commun (Art. L. 322-5 CSS)"
                         });
                         return;
                     }
-                    // Oui ou Je ne sais pas -> Continue à l'étape suivante pour déterminer le motif de venue
                     setCurrentStep('motif_venue');
                     return;
                 }
 
 
                 if (currentStep === 'motif_venue') {
-                    // Vérifier si la question précédente était 'Je ne sais pas' HAD
                     const isSenderHadAndJSP = answers.activity_sender === 'had' && answers.transfert_had_lien_protocole_receveur === 'jsp';
+                    const motifText = QUESTIONS.motif_venue.options.find(opt => opt.id === optionId).label;
                     
-                    let resultConfig = {};
-
                     if (isSenderHadAndJSP) {
-                        // Cas "Je ne sais pas" : double analyse nécessaire
-                        const motifText = QUESTIONS.motif_venue.options.find(opt => opt.id === optionId).label;
-                        
                         if (optionId === 'seance') {
-                             resultConfig = {
+                             setResult({
                                 payer: "VARIE (Receveur si lié HAD / AM si non lié)",
                                 detail: `Si la ${motifText.toLowerCase()} est liée au protocole HAD de l'envoyeur, c'est l'HAD qui paie (via le Receveur). Si elle est hors protocole, c'est l'Assurance Maladie (Droit Commun).`,
                                 code: "TSE / TSD",
-                                alert: "Vous devez vérifier si cet acte fait partie du protocole HAD de l'établissement envoyeur."
-                            };
+                                alert: "Vous devez vérifier si cet acte fait partie du protocole HAD de l'établissement envoyeur.",
+                                legal: "Protocole HAD / Art. L. 322-5 CSS"
+                            });
                         } else {
-                            // Transfert in / Consultation
-                             resultConfig = {
+                             setResult({
                                 payer: "VARIE (Envoyeur si lié HAD / AM si non lié)",
                                 detail: `Si le ${motifText.toLowerCase()} est lié au protocole HAD de l'envoyeur, l'HAD envoyeur paie. Si c'est hors protocole, c'est l'Assurance Maladie (Droit Commun).`,
                                 code: "Aucun",
-                                alert: "Vous devez vérifier si cet acte fait partie du protocole HAD de l'établissement envoyeur."
-                            };
+                                alert: "Vous devez vérifier si cet acte fait partie du protocole HAD de l'établissement envoyeur.",
+                                legal: "Protocole HAD / Art. L. 322-5 CSS"
+                            });
                         }
-                        setResult(resultConfig);
                         return;
                     }
 
-                    // Logique Standard (incluant Receveur non HAD + Envoyeur HAD SÛR)
                     if (optionId === 'seance') {
                         if (newAnswers.activity === 'dialyse_unite') {
                             setResult({
-                                payer: "Votre Établissement (Receveur)",
+                                payer: "Votre Établissement", // was (Receveur)
                                 detail: "Dialyse Hors Centre (UDM/Autodialyse) : Le receveur facture le forfait et assume le transport.",
-                                code: "TSD"
+                                code: "TSD",
+                                legal: "Article 80 (Art. L. 162-21-2 CSS)"
                             });
                         } else {
                             setResult({
-                                payer: "Votre Établissement (Receveur)",
+                                payer: "Votre Établissement", // was (Receveur)
                                 detail: "Séance (Chimio/Radio/Dialyse Centre). La responsabilité est inversée : le prestataire (vous) paie.",
-                                code: "TSE"
+                                code: "TSE",
+                                legal: "Article 80 (Art. L. 162-21-2 CSS)"
                             });
                         }
                     } else if (optionId === 'transfert_in') {
                         setResult({
-                            payer: "Établissement Envoyeur (Origine)",
+                            payer: "Établissement A", // was Envoyeur (Origine)
                             detail: "Transfert Définitif entrant. C'est l'établissement qui envoie le patient qui paie.",
-                            code: "Aucun"
+                            code: "Aucun",
+                            legal: "Article 80 (Art. L. 162-21-2 CSS)"
                         });
                     } else if (optionId === 'consultation') {
                         setResult({
-                            payer: "Établissement Envoyeur (Origine)",
+                            payer: "Établissement A", // was Envoyeur (Origine)
                             detail: "Transfert Provisoire pour acte/consultation. L'origine conserve la charge.",
-                            code: "Aucun"
+                            code: "Aucun",
+                            legal: "Article 80 (Art. L. 162-21-2 CSS)"
                         });
                     }
                     return;
                 }
 
-                // --- ENVOYEUR ---
                 if (currentStep === 'status_patient_depart') {
                     if (optionId === 'externe') {
                         setResult({
                             payer: "Assurance Maladie",
                             detail: "Patient non hospitalisé. Article 80 ne s'applique pas.",
-                            code: "Aucun"
+                            code: "Aucun",
+                            legal: "Droit Commun (Art. L. 322-5 CSS)"
                         });
                     } else {
                         setCurrentStep('destination_type');
@@ -556,7 +867,8 @@
                         setResult({
                             payer: "Assurance Maladie",
                             detail: "Transfert vers une structure d'Hospitalisation à Domicile (HAD).",
-                            code: "Aucun"
+                            code: "Aucun",
+                            legal: "Droit Commun (Art. L. 322-5 CSS)"
                         });
                     } else if (optionId === 'liberal') {
                         setCurrentStep('detail_provisoire');
@@ -569,15 +881,18 @@
                 if (currentStep === 'motif_permission') {
                     if (optionId === 'therapeutique') {
                         setResult({
-                            payer: "Votre Établissement (Envoyeur)",
+                            payer: "Votre Établissement", // was (Envoyeur)
                             detail: "Permission thérapeutique ou organisationnelle.",
-                            code: newAnswers.activity === 'smr' ? "ST6" : "Aucun"
+                            code: newAnswers.activity === 'smr' ? "ST6" : "Aucun",
+                            legal: "Article 80 (Art. L. 162-21-2 CSS)"
                         });
                     } else {
+                        // MODIFICATION CONVENANCE : Strictement charge Patient
                         setResult({
-                            payer: "Le Patient (ou AM si Sortie Définitive)",
-                            detail: "Permission convenance : charge Patient. Sortie définitive : charge AM.",
-                            code: "Aucun"
+                            payer: "Le Patient",
+                            detail: "Permission pour convenance personnelle : Le transport est intégralement à la charge du patient.",
+                            code: "Aucun",
+                            legal: "Transport non pris en charge (Article R. 1112-56 CSP / Art. L. 322-5 CSS)"
                         });
                     }
                     return;
@@ -585,21 +900,21 @@
 
                 if (currentStep === 'nature_transfert') {
                     if (optionId === 'definitif') {
-                        // --- RÈGLE HAD : TOUT DÉFINITIF -> AM ---
                         if (newAnswers.activity === 'had') {
                              setResult({
                                 payer: "Assurance Maladie",
                                 detail: "Transfert définitif HAD (lié ou non au protocole). Pris en charge par l'Assurance Maladie (Droit Commun).",
-                                code: "Aucun"
+                                code: "Aucun",
+                                legal: "Droit Commun (Art. L. 322-5 CSS)"
                             });
                             return;
                         }
-                        // --- FIN RÈGLE HAD ---
 
                         setResult({
-                            payer: "Votre Établissement (Envoyeur)",
+                            payer: "Votre Établissement", // was (Envoyeur)
                             detail: "Transfert définitif (> 48h). L'établissement d'origine paie.",
-                            code: newAnswers.activity === 'mco' ? "TDE" : (newAnswers.activity === 'smr' ? "ST4" : "Aucun")
+                            code: newAnswers.activity === 'mco' ? "TDE" : (newAnswers.activity === 'smr' ? "ST4" : "Aucun"),
+                            legal: "Article 80 (Art. L. 162-21-2 CSS)"
                         });
                     } else {
                         setCurrentStep('detail_provisoire');
@@ -608,82 +923,88 @@
                 }
 
                 if (currentStep === 'detail_provisoire') {
-                    // --- NOUVELLE RÈGLE HAD : Séances -> RECEVEUR ; Actes/PIA/PIE -> HAD ENVOYEUR ---
                     if (newAnswers.activity === 'had') {
                         const chargeReceveurCodes = ['seance_es', 'seance_dialyse'];
                         const chargeEnvoyeurCodes = ['pie', 'pia_externe', 'pia_sejour', 'acte_liberal', 'radio_liberal'];
                         
                         if (chargeReceveurCodes.includes(optionId)) {
                              setResult({
-                                payer: "Établissement Receveur",
+                                payer: "Établissement B", // was Receveur
                                 detail: "Séance (Chimio/Radio/Dialyse) dans le cadre du protocole HAD. La responsabilité est inversée : l'établissement prestataire (receveur) paie.",
-                                code: (optionId === 'seance_dialyse' && answers.destination_type === 'es_dialyse_unite') ? "TSD" : "TSE",
-                                alert: "Vous (HAD Envoyeur) ne payez pas ce transport."
+                                code: "Aucun", // FIXED: Was TSE/TSD logic. Now forced to Aucun because User doesn't pay.
+                                alert: "Vous (HAD Envoyeur) ne payez pas ce transport.",
+                                legal: "Article 80 (Art. L. 162-21-2 CSS)"
                             });
                             return;
                         } else if (chargeEnvoyeurCodes.includes(optionId)) {
                              setResult({
-                                payer: "Votre Établissement (Envoyeur HAD)",
+                                payer: "Votre Établissement", // was (Envoyeur HAD)
                                 detail: "Transfert provisoire pour acte/prestation (PIE, PIA, Acte Libéral, Radio Libéral) lié au protocole HAD. Ces coûts sont à la charge de l'HAD.",
-                                code: "Aucun"
+                                code: "Aucun",
+                                legal: "Article 80 (Art. L. 162-21-2 CSS) / Circulaire HAD"
                             });
                             return;
                         }
                     }
-                    // --- FIN RÈGLE HAD ---
 
-                    // LOGIQUE STANDARD
                     switch (optionId) {
                         case 'seance_es':
                             setResult({
-                                payer: "Établissement Receveur",
+                                payer: "Établissement B", // was Receveur
                                 detail: "Séance Chimio/Radio en Établissement. L'établissement prestataire paie.",
-                                code: "TSE",
-                                alert: "Vous ne payez pas ce transport."
+                                code: "Aucun", // FIXED: Was TSE.
+                                alert: "Vous ne payez pas ce transport et ne valorisez aucun supplément.",
+                                legal: "Article 80 (Art. L. 162-21-2 CSS)"
                             });
                             break;
                         case 'seance_dialyse':
                             const isCentre = answers.destination_type === 'es_dialyse_centre';
                             setResult({
-                                payer: "Établissement Receveur",
+                                payer: "Établissement B", // was Receveur
                                 detail: `Séance Dialyse (${isCentre ? 'Centre' : 'Unité'}). L'établissement prestataire paie.`,
-                                code: isCentre ? "TSE" : "TSD",
-                                alert: "Vous ne payez pas ce transport."
+                                code: "Aucun", // FIXED: Was TSE/TSD.
+                                alert: "Vous ne payez pas ce transport et ne valorisez aucun supplément.",
+                                legal: "Article 80 (Art. L. 162-21-2 CSS)"
                             });
                             break;
                         case 'radio_liberal':
                             setResult({
                                 payer: "Assurance Maladie",
                                 detail: "Exception : Radiothérapie en cabinet libéral.",
-                                code: "Aucun"
+                                code: "Aucun",
+                                legal: "Droit Commun (Art. L. 322-5 CSS)"
                             });
                             break;
                         case 'acte_liberal':
                             setResult({
-                                payer: "Votre Établissement (Envoyeur)",
+                                payer: "Votre Établissement", // was (Envoyeur)
                                 detail: "Acte / Consultation en cabinet libéral (Transport 'hors les murs').",
-                                code: newAnswers.activity === 'smr' ? "ST5" : "Aucun"
+                                code: newAnswers.activity === 'smr' ? "ST5" : "Aucun",
+                                legal: "Article 80 (Art. L. 162-21-2 CSS)"
                             });
                             break;
                         case 'pie':
                             setResult({
-                                payer: "Votre Établissement (Envoyeur)",
+                                payer: "Votre Établissement", // was (Envoyeur)
                                 detail: "PIE (Prestation Inter-Établissement).",
-                                code: "Aucun"
+                                code: "Aucun",
+                                legal: "Article 80 (Art. L. 162-21-2 CSS)"
                             });
                             break;
                         case 'pia_externe':
                             setResult({
-                                payer: "Votre Établissement (Envoyeur)",
+                                payer: "Votre Établissement", // was (Envoyeur)
                                 detail: "PIA Externe (Prestation Inter-Activité Externe).",
-                                code: newAnswers.activity === 'smr' ? "ST5" : "Aucun"
+                                code: newAnswers.activity === 'smr' ? "ST5" : "Aucun",
+                                legal: "Article 80 (Art. L. 162-21-2 CSS)"
                             });
                             break;
                         case 'pia_sejour':
                             setResult({
-                                payer: "Établissement Receveur",
+                                payer: "Établissement B", // was Receveur
                                 detail: "PIA Séjour (Prestation Inter-Activité avec hébergement/séjour).",
-                                code: "Aucun"
+                                code: "Aucun",
+                                legal: "Article 80 (Art. L. 162-21-2 CSS)"
                             });
                             break;
                         default:
@@ -695,7 +1016,6 @@
 
             const getQuestionText = () => QUESTIONS[currentStep].text;
 
-            // --- LABEL RENDERER (Splits parenthesis) ---
             const renderButtonLabel = (text) => {
                 const regex = /^(.*?)\s*\((.*)\)\s*$/;
                 const match = text.match(regex);
@@ -712,16 +1032,13 @@
                 return <span className="font-semibold text-slate-700 group-hover:text-am-blue flex-1 text-lg">{text}</span>;
             };
 
-            // --- TARIFF DISPLAY HELPER ---
             const renderTariffsForCode = (code) => {
                 if (!code || code === "Aucun" || code.includes("VARIE")) return null;
 
                 let items = [];
-                // Look for code in MCO
                 const mcoItems = TARIFS.MCO.filter(item => item.type.includes(code) || (code === "TSD" && item.type.includes("TSE")));
                 if (mcoItems.length > 0) items = mcoItems;
 
-                // Look for code in SMR
                 const smrItems = TARIFS.SMR.filter(item => item.type.includes(code));
                 if (smrItems.length > 0) items = smrItems;
 
@@ -743,10 +1060,14 @@
                     </div>
                 );
             };
+            
+            // --- Helper for result title color ---
+            const resultPayerStyle = result ? getPayerStyle(result.payer, answers.role) : { color: "", hex: "" };
 
             return (
                 <div className="min-h-screen bg-slate-50 text-slate-800 font-sans p-4 md:p-8">
-                <div className="max-w-3xl mx-auto space-y-6">
+                {/* ID added for PDF export targeting */}
+                <div id="simulation-container" className="max-w-3xl mx-auto space-y-6">
                     
                     {/* HEADER */}
                     <header className="bg-am-blue p-6 rounded-xl shadow-lg flex items-center gap-4 text-white">
@@ -758,9 +1079,12 @@
                         </div>
                     </header>
 
-                    {/* PROGRESS / HISTORY */}
+                    {/* DYNAMIC DIAGRAM */}
+                    <TransportDiagram answers={answers} result={result} />
+
+                    {/* PROGRESS / HISTORY - WILL BE HIDDEN IN PDF */}
                     {history.length > 0 && (
-                    <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-2">
+                    <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-2 pdf-hide">
                         <h3 className="text-xs font-bold text-am-blue uppercase tracking-wider mb-2 border-b border-slate-100 pb-2">Votre Parcours</h3>
                         {history.map((item, index) => {
                         const q = QUESTIONS[item.step];
@@ -822,28 +1146,44 @@
                         <div className="bg-white p-6 md:p-8 rounded-xl shadow-lg border-t-4 border-am-blue">
                         <div className="flex items-start justify-between mb-8 pb-6 border-b border-slate-100">
                             <div>
-                                <h2 className="text-xs font-bold text-am-purple uppercase tracking-widest mb-2">Résultat de la simulation</h2>
-                                <h3 className={`text-2xl md:text-3xl font-bold ${
-                                    result.payer.includes("Votre Établissement") || result.payer.includes("VARIE")
-                                    ? "text-amber-600" 
-                                    : "text-emerald-600"
-                                }`}>
+                                {/* Subtitle color changed to am-grey (#545859) and text updated */}
+                                <h2 className="text-xs font-bold text-am-grey uppercase tracking-widest mb-2">Résultat sur la prise en charge du transport</h2>
+                                <h3 className={`text-2xl md:text-3xl font-bold ${resultPayerStyle.color}`}>
                                     {result.payer}
                                 </h3>
                             </div>
-                            {result.payer.includes("Votre") || result.payer.includes("VARIE")
-                                ? <Euro className="w-12 h-12 text-amber-400 bg-amber-50 p-2 rounded-full" /> 
-                                : <CheckCircle2 className="w-12 h-12 text-emerald-500 bg-emerald-50 p-2 rounded-full" />
-                            }
+                            <CheckCircle2 className={`w-12 h-12 p-2 rounded-full bg-slate-50 ${resultPayerStyle.color}`} />
                         </div>
+                        
+                        {/* ALERT BOX moved above explanations */}
+                        {result.alert && (
+                            <div className="mb-6 flex gap-3 items-center bg-red-50 text-red-700 p-4 rounded-lg border border-red-100">
+                                <AlertTriangle className="w-5 h-5 shrink-0" />
+                                <p className="text-sm font-bold">{result.alert}</p>
+                            </div> 
+                        )}
 
                         <div className="grid gap-6 md:grid-cols-2">
                             <div className="bg-slate-50 p-5 rounded-lg border border-slate-100">
                                 <div className="flex gap-3 items-start mb-2">
                                     <Info className="w-5 h-5 text-am-blue mt-0.5 shrink-0" />
-                                    <p className="font-bold text-am-dark text-sm">Analyse réglementaire</p>
+                                    {/* RENAMED to Explications */}
+                                    <p className="font-bold text-am-dark text-sm">Explications</p>
                                 </div>
                                 <p className="text-slate-600 text-sm leading-relaxed pl-8">{result.detail}</p>
+                                
+                                {/* ADDED Legal Reference Box */}
+                                <div className="mt-4 pt-4 border-t border-slate-100">
+                                    <div className="flex gap-2 items-start">
+                                        <Scale className="w-4 h-4 text-slate-400 mt-0.5" />
+                                        <div>
+                                            <p className="font-bold text-slate-700 text-xs uppercase mb-1">Références juridiques</p>
+                                            <p className="text-xs text-slate-500 font-mono bg-slate-100 px-2 py-1 rounded">
+                                                {result.legal || "Article 80 (LFSS 2017)"}
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
 
                             <div className="bg-slate-50 p-5 rounded-lg border border-slate-100">
@@ -860,20 +1200,23 @@
                             </div>
                         </div>
 
-                        {result.alert && (
-                            <div className="mt-6 flex gap-3 items-center bg-red-50 text-red-700 p-4 rounded-lg border border-red-100">
-                                <AlertTriangle className="w-5 h-5 shrink-0" />
-                                <p className="text-sm font-bold">{result.alert}</p>
-                            </div> 
-                        )}
-
-                        <div className="mt-8 flex flex-col sm:flex-row gap-4 pt-6 border-t border-slate-100">
+                        {/* Button container with ignore attribute for html2pdf */}
+                        <div className="mt-8 flex flex-col sm:flex-row gap-4 pt-6 border-t border-slate-100" data-html2canvas-ignore="true">
                             <button 
                                 onClick={handleBack}
                                 className="flex-1 py-3 px-6 bg-white border border-slate-200 text-slate-600 font-semibold rounded-lg hover:bg-slate-50 hover:border-am-blue hover:text-am-blue transition-all flex items-center justify-center gap-2"
                             >
                                 <ArrowLeft className="w-4 h-4" /> Modifier
                             </button>
+                            
+                            {/* NEW BUTTON: Export PDF */}
+                            <button 
+                                onClick={handleExportPDF}
+                                className="flex-1 py-3 px-6 bg-slate-100 border border-slate-200 text-slate-700 font-semibold rounded-lg hover:bg-slate-200 transition-all flex items-center justify-center gap-2"
+                            >
+                                <Download className="w-4 h-4" /> Exporter en PDF
+                            </button>
+
                             <button 
                                 onClick={reset}
                                 className="flex-1 py-3 px-6 bg-am-blue text-white font-semibold rounded-lg hover:bg-[#0a3680] shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2"
@@ -886,7 +1229,8 @@
                     )}
 
                     {/* FOOTER / DISCLAIMER */}
-                    <footer className="text-center text-xs text-slate-400 pb-8 mt-12">
+                    {/* Ignore footer in PDF export */}
+                    <footer className="text-center text-xs text-slate-400 pb-8 mt-12" data-html2canvas-ignore="true">
                         <p className="max-w-2xl mx-auto">
                             Cet outil est une aide à la décision basée sur la Note d'Information et le rapport d'analyse de l'Article 80 LFSS 2017. 
                             Il ne se substitue pas à la réglementation officielle.
