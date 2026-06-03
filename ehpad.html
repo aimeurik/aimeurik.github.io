@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulateur DM EHPAD - Outil de vérification LPP</title>
+    
+    <!-- CHARGEMENT DES DONNÉES EXTERNES -->
+    <script src="lpp_data.js"></script>
+
+    <!-- Fix pour l'environnement process si nécessaire -->
+    <script>
+        window.process = { env: { NODE_ENV: 'production' } };
+    </script>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Configuration Tailwind pour la charte Assurance Maladie -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'am-blue': '#0C419A',   // Bleu dominant
+                        'am-purple': '#A05BB6', // Pictogrammes & Bordures
+                        'am-dark': '#1e293b',
+                        'am-grey': '#545859',   // Gris spécifique
+                        'am-green': '#00AB8E',  // Vert Validation
+                        'am-red': '#E04F39',    // Rouge Alerte
+                    },
+                    fontFamily: {
+                        sans: ['"Source Sans Pro"', 'Arial', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Babel pour le JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Import Font Source Sans Pro -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Source+Sans+Pro:wght@300;400;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        body { font-family: 'Source Sans Pro', Arial, sans-serif; }
+        .fade-in { animation: fadeIn 0.5s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        /* Custom Scrollbar for better UX */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useMemo, useEffect } = React;
+        
+        // --- ICONS (Lucide style) ---
+        const Icons = {
+            Search: (props) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>,
+            Box: (props) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>,
+            CheckCircle: (props) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>,
+            AlertCircle: (props) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>,
+            Info: (props) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>,
+            FileText: (props) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/><line x1="10" x2="8" y1="9" y1="9"/></svg>,
+            Bed: (props) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M2 4v16"/><path d="M2 8h18a2 2 0 0 1 2 2v10"/><path d="M2 17h20"/><path d="M6 8v9"/></svg>,
+            Syringe: (props) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="m18 2 4 4"/><path d="m17 7 3-3"/><path d="M19 9 8.7 19.3c-1 1-2.5 1-3.4 0l-.6-.6c-1-1-1-2.5 0-3.4L15 5"/><path d="m9 11 4 4"/><path d="m5 19-3 3"/><path d="m14 4 6 6"/></svg>,
+            List: (props) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinecap="round" strokeLinejoin="round" {...props}><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>,
+            ExternalLink: (props) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" x2="21" y1="14" y2="3"/></svg>,
+            ArrowDown: (props) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>,
+            Database: (props) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s 9-1.34 9-3V5"/></svg>,
+        };
+
+        const { Search, Box, CheckCircle, AlertCircle, Info, FileText, Bed, Syringe, List, ExternalLink, ArrowDown, Database } = Icons;
+
+        // --- STRUCTURE OFFICIELLE ---
+        const OFFICIAL_STRUCTURE = [
+            {
+                title: "Petit matériel et fournitures médicales",
+                items: [
+                    "Abaisse-langue sauf si le matériel est compris dans la rémunération de l'acte",
+                    "Accessoires pour électrocardiogramme sauf si le matériel est compris dans la rémunération de l'acte",
+                    "Crachoir",
+                    "Doigtier sauf si le matériel est compris dans la rémunération de l'acte",
+                    "Fil à sutures sauf si le matériel est compris dans la rémunération de l'acte",
+                    "Gant stérile sauf si le matériel est compris dans la rémunération de l'acte",
+                    "Garrot sauf si le matériel est compris dans la rémunération de l'acte",
+                    "Masque",
+                    "Bande de crêpe et de contention",
+                    "Articles pour pansements",
+                    "Dispositif médical pour autocontrôle (urine, sang)",
+                    "Nutriment pour supplémentation orale et nutriment pour supplémentation entérale",
+                    "Sondes naso-gastriques ou naso-entérale",
+                    "Dispositif médical pour incontinence urinaire à l'exclusion des stomies",
+                    "Sonde vésicale pour hétérosondage intermittent",
+                    "Seringue et aiguille sauf si le matériel est compris dans la rémunération de l'acte"
+                ]
+            },
+            {
+                title: "Matériel médical amortissable",
+                items: [
+                    "Armoire de pharmacie",
+                    "Aspirateur à mucosité",
+                    "Chariot de soins et / ou de préparation de médicaments",
+                    "Container pour stockage des déchets médicaux",
+                    "Electrocardiographe",
+                    "Matériel nécessaire pour sutures et pansements tel que pince de Péan, pince Kocher, ciseaux",
+                    "Matériel lié au fonctionnement d'une pharmacie à usage intérieur, lorsqu'elle existe, nécessaire à l'exercice des missions définies à l'article L. 595-2 du code de la santé publique",
+                    "Pèse-personne ou chaise-balance",
+                    "Pompe pour nutrition entérale",
+                    "Négatoscope",
+                    "Otoscope",
+                    "Stérilisateur",
+                    "Stéthoscope et tensiomètre y compris les tensiomètres électriques",
+                    "Table d'examen",
+                    "Thermomètre électronique",
+                    "Appareil générateur d'aérosol et nébuliseur associé",
+                    "Appareil de mesure pour glycémie",
+                    "Matériels de perfusion périphérique et leurs accessoires (pied à sérum, potence, panier de perfusion)",
+                    "Béquille et canne anglaise",
+                    "Déambulateur",
+                    "Fauteuil roulant à pousser ou manuel non affecté à un résident particulier pour un handicap particulier",
+                    "Siège pouvant être adapté sur un châssis à roulettes",
+                    "Lit médical et accessoires",
+                    "Soulève-malade mécanique ou électrique",
+                    "Matelas simple, matelas ou surmatelas d'aide à la prévention d'escarres et accessoires de protection du matelas ou surmatelas",
+                    "Compresseur pour surmatelas pneumatique à pression alternée",
+                    "Coussin d'aide à la prévention d'escarres",
+                    "Chaise percée avec accoudoirs",
+                    "Appareil de verticalisation"
+                ]
+            }
+        ];
+
+        // --- GESTION DES DONNÉES (HYBRIDE) ---
+        // 1. Données de secours (embarquées) pour que l'aperçu fonctionne
+        // NOTE: "inArrete" n'est plus utilisé/nécessaire.
+        const BACKUP_DATABASE = [
+            { code: "1234567", label: "Lit médical standard (Exemple)", category: "Lit médical et accessoires", description: "Lit médical standard" },
+            { code: "1010101", label: "Gants d'examen (Exemple)", category: "Gant stérile sauf si le matériel est compris dans la rémunération de l'acte", description: "Gants", endDate: "01/01/2026" },
+        ];
+
+        // 2. Initialisation : On prend les données externes (si chargées via lpp_data.js) ou sinon le backup
+        const getDatabase = () => {
+            if (window.LPP_DATABASE && Array.isArray(window.LPP_DATABASE)) {
+                return window.LPP_DATABASE;
+            }
+            return BACKUP_DATABASE;
+        };
+
+        const DATA_SOURCE_TYPE = window.LPP_DATABASE ? "EXTERNAL" : "INTERNAL";
+        
+        // --- HELPERS ---
+        // Fonction pour générer le lien CNAMTS officiel
+        const getDeviceLink = (code) => `http://www.codage.ext.cnamts.fr/cgi/tips/cgi-fiche?p_code_tips=${code}&p_date_jo_arrete=%25&p_menu=FICHE&p_site=AMELI`;
+
+
+        // --- COMPONENTS ---
+
+        const Header = () => (
+            <header className="bg-am-blue p-6 rounded-xl shadow-lg flex items-center gap-4 text-white mb-6">
+                <div className="bg-white/10 p-4 rounded-full hidden sm:flex backdrop-blur-sm border border-white/20">
+                    <Box className="w-10 h-10 text-white" />
+                </div>
+                <div className="flex-1">
+                    <div className="flex justify-between items-start">
+                        <div>
+                            <h1 className="text-2xl font-bold tracking-tight">Vérification Dispositifs Médicaux EHPAD</h1>
+                            <p className="text-blue-100 text-sm mt-1 opacity-90">Outil d'aide à la décision - Arrêté du 30 mai 2008</p>
+                        </div>
+                        
+                        {/* Indicateur de source de données */}
+                        <div className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border flex items-center gap-2 ${DATA_SOURCE_TYPE === 'EXTERNAL' ? 'bg-am-green text-white border-am-green' : 'bg-am-dark/30 text-white/70 border-white/20'}`}>
+                            <Database className="w-3 h-3" />
+                            {DATA_SOURCE_TYPE === 'EXTERNAL' ? 'Données LPP chargées' : 'Mode Démo (Données internes)'}
+                        </div>
+                    </div>
+                </div>
+            </header>
+        );
+
+        const Tabs = ({ activeTab, setActiveTab }) => (
+            <div className="flex bg-white rounded-lg shadow-sm border border-slate-200 mb-6 p-1">
+                <button 
+                    onClick={() => setActiveTab('search')}
+                    className={`flex-1 py-3 px-4 rounded-md text-sm font-bold flex items-center justify-center gap-2 transition-all ${
+                        activeTab === 'search' 
+                        ? 'bg-am-blue text-white shadow-md' 
+                        : 'text-slate-500 hover:bg-slate-50'
+                    }`}
+                >
+                    <Search className="w-4 h-4" />
+                    Recherche par code/libellé
+                </button>
+                <button 
+                    onClick={() => setActiveTab('list')}
+                    className={`flex-1 py-3 px-4 rounded-md text-sm font-bold flex items-center justify-center gap-2 transition-all ${
+                        activeTab === 'list' 
+                        ? 'bg-am-blue text-white shadow-md' 
+                        : 'text-slate-500 hover:bg-slate-50'
+                    }`}
+                >
+                    <List className="w-4 h-4" />
+                    Liste complète
+                </button>
+            </div>
+        );
+
+        const ResultCard = ({ item }) => {
+            return (
+                <div className="border-l-4 border-am-blue rounded-r-md shadow-sm p-3 mb-2 flex items-center gap-4 animate-in fade-in slide-in-from-bottom-2 duration-500 bg-white hover:shadow-md transition-shadow">
+                    
+                    <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2 mb-0.5">
+                            <div className="flex items-center gap-2 min-w-0">
+                                <span className="px-2 py-0.5 rounded text-sm font-bold font-mono bg-blue-50 text-am-blue border border-blue-100 whitespace-nowrap">
+                                    {item.code}
+                                </span>
+                                <h3 className="text-lg font-bold text-slate-800 truncate" title={item.label}>{item.label}</h3>
+                            </div>
+                            
+                            <div className="flex items-center gap-3 shrink-0">
+                                {item.endDate && (
+                                    <span className="text-am-red text-xs font-bold whitespace-nowrap shrink-0">
+                                        Code LPP radié depuis le {item.endDate}
+                                    </span>
+                                )}
+                                
+                                <a 
+                                    href={getDeviceLink(item.code)} 
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-1.5 text-xs font-semibold text-am-purple hover:text-white hover:bg-am-purple border border-slate-200 hover:border-am-purple px-2 py-1 rounded-md bg-white transition-all group shrink-0"
+                                    title="Lien vers la fiche du dispositif"
+                                >
+                                    <span className="hidden sm:inline">Voir fiche</span>
+                                    <ExternalLink className="w-3 h-3 group-hover:scale-110 transition-transform" />
+                                </a>
+                            </div>
+                        </div>
+                        <p className="text-slate-500 text-xs flex items-center gap-1.5 truncate">
+                            <span className="w-1.5 h-1.5 rounded-full bg-am-purple/50 shrink-0"></span> {item.category}
+                        </p>
+                    </div>
+                </div>
+            );
+        };
+
+        const SearchTab = () => {
+            const [query, setQuery] = useState("");
+            const [hideRadiated, setHideRadiated] = useState(true);
+            const [displayLimit, setDisplayLimit] = useState(50); // Pagination pour la recherche
+            const db = useMemo(() => getDatabase(), []);
+
+            const results = useMemo(() => {
+                if (!query || query.length < 2) return [];
+                
+                // NOUVELLE LOGIQUE DE RECHERCHE AVEC JOKER "+"
+                const searchTerms = query.toLowerCase().split('+').map(t => t.trim()).filter(t => t.length > 0);
+                
+                return db.filter(item => {
+                    // SUPPRESSION DE LA VERIFICATION "item.inArrete"
+                    // On considère que tout ce qui est dans la base est dans l'arrêté.
+                    
+                    // 2. Recherche multi-champs concaténée
+                    const searchableText = `${item.label} ${item.code} ${item.category}`.toLowerCase();
+                    
+                    // 3. Vérification : TOUS les termes doivent être présents (AND)
+                    const matchesQuery = searchTerms.every(term => searchableText.includes(term));
+                    
+                    const matchesRadiation = hideRadiated ? !item.endDate : true;
+                    
+                    return matchesQuery && matchesRadiation;
+                });
+            }, [query, hideRadiated, db]);
+
+            // Réinitialiser la pagination quand la recherche change
+            useEffect(() => {
+                setDisplayLimit(50);
+            }, [query, hideRadiated]);
+
+            const handleLoadMore = () => {
+                setDisplayLimit(prev => prev + 50);
+            };
+
+            const visibleResults = results.slice(0, displayLimit);
+            const hasMore = results.length > displayLimit;
+
+            // Détermination du texte du compteur
+            const count = results.length;
+            const countText = count > 1 ? `${count} codes LPP trouvés` : `1 code LPP trouvé`;
+
+
+            return (
+                <div className="animate-in fade-in duration-300">
+                     <div className="bg-white p-8 rounded-xl shadow-md border border-slate-100 mb-8">
+                        <h2 className="text-xl font-bold text-am-dark mb-4 flex items-center gap-2">
+                            <Search className="w-5 h-5 text-am-purple" />
+                            Rechercher un dispositif
+                        </h2>
+                        <div className="relative group">
+                            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                                <Search className="h-6 w-6 text-slate-400 group-focus-within:text-am-blue transition-colors" />
+                            </div>
+                            <input
+                                type="text"
+                                className="block w-full pl-12 pr-4 py-4 bg-slate-50 border-2 border-slate-200 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:border-am-blue focus:ring-1 focus:ring-am-blue transition-all text-lg"
+                                placeholder="Code LPP (ex: 1234567) ou libellé (ex: Lit, Matelas...)"
+                                value={query}
+                                onChange={(e) => setQuery(e.target.value)}
+                            />
+                            {query && (
+                                <button 
+                                    onClick={() => setQuery('')}
+                                    className="absolute inset-y-0 right-0 pr-4 flex items-center text-slate-400 hover:text-am-red transition-colors"
+                                >
+                                    <span className="text-xs font-bold uppercase mr-1">Effacer</span>
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                                </button>
+                            )}
+                        </div>
+                        
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mt-2 ml-1">
+                            <div className="text-sm text-slate-500">
+                                <p>Tapez au moins 2 caractères.</p>
+                                <p className="text-am-blue font-semibold text-xs mt-0.5 flex items-center gap-1">
+                                    <Info className="w-3 h-3" />
+                                    Astuce : Utilisez "+" pour combiner des mots (ex: lit + location)
+                                </p>
+                            </div>
+                            
+                            <label className="flex items-center gap-2 cursor-pointer group mt-2 sm:mt-0">
+                                <div className="relative flex items-center">
+                                    <input 
+                                        type="checkbox" 
+                                        className="peer sr-only"
+                                        checked={hideRadiated}
+                                        onChange={(e) => setHideRadiated(e.target.checked)}
+                                    />
+                                    <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-am-blue rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-am-blue"></div>
+                                </div>
+                                <span className="text-sm font-medium text-slate-700 group-hover:text-am-blue transition-colors">Masquer les codes LPP radiés</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    {/* CHAMP DYNAMIQUE DU COMPTEUR - Affiché seulement si COUNT > 0 */}
+                    {query.length >= 2 && count > 0 && (
+                        <div className="mb-4 px-4 py-2 bg-white rounded-lg shadow-sm border border-slate-200">
+                            <p className="font-bold text-sm text-am-dark">
+                                {countText}
+                            </p>
+                        </div>
+                    )}
+
+                    <div className="space-y-2">
+                        
+                        {/* ALERTE AUCUN RÉSULTAT - Affichée seulement si COUNT = 0 */}
+                        {query.length >= 2 && count === 0 && (
+                            <div className="bg-white border-l-4 border-am-grey p-6 rounded-r-lg shadow-sm flex items-center gap-4 animate-in fade-in duration-300">
+                                <AlertCircle className="w-10 h-10 text-am-grey opacity-50 shrink-0" />
+                                <div>
+                                    <h3 className="font-bold text-lg text-am-dark">Aucun résultat trouvé</h3>
+                                    <p className="text-slate-600">Aucun dispositif LPP ne correspond à "{query}" (vérifiez les filtres de radiation).</p>
+                                </div>
+                            </div>
+                        )}
+
+                        {visibleResults.map((item, index) => <ResultCard key={index} item={item} />)}
+                        
+                        {hasMore && (
+                            <div className="p-4 text-center">
+                                <button 
+                                    onClick={handleLoadMore}
+                                    className="px-6 py-2 bg-white border border-slate-300 text-slate-700 font-bold rounded-lg hover:bg-slate-50 hover:border-am-blue hover:text-am-blue transition-all text-sm shadow-sm"
+                                >
+                                    Afficher les {results.length - visibleResults.length} résultats suivants...
+                                </button>
+                            </div>
+                        )}
+                    </div>
+
+                    {query.length < 2 && (
+                        <div className="mt-8">
+                            <div className="bg-slate-50 border border-slate-200 p-5 rounded-lg text-center">
+                                <h3 className="font-bold text-am-grey mb-2 flex items-center justify-center gap-2">
+                                    <FileText className="w-4 h-4" /> Référence
+                                </h3>
+                                <p className="text-sm text-slate-600">Basé sur l'Arrêté du 30 mai 2008. Seuls les dispositifs à la charge de l'EHPAD sont listés ici.</p>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const ListingTab = () => {
+            const [selectedTitle, setSelectedTitle] = useState("");
+            const [selectedCategory, setSelectedCategory] = useState("");
+            const [hideRadiated, setHideRadiated] = useState(true);
+            const [displayLimit, setDisplayLimit] = useState(50);
+            const db = useMemo(() => getDatabase(), []);
+
+            const availableCategories = useMemo(() => {
+                if (!selectedTitle) return [];
+                const group = OFFICIAL_STRUCTURE.find(g => g.title === selectedTitle);
+                return group ? group.items : [];
+            }, [selectedTitle]);
+
+            const filteredItems = useMemo(() => {
+                if (!selectedCategory) return [];
+                
+                return db.filter(item => {
+                    // SUPPRESSION DU FILTRE "item.inArrete"
+                    const matchesCategory = item.category === selectedCategory;
+                    const matchesRadiation = hideRadiated ? !item.endDate : true;
+                    return matchesCategory && matchesRadiation;
+                });
+            }, [selectedCategory, hideRadiated, db]);
+
+            useEffect(() => {
+                setDisplayLimit(50);
+            }, [selectedCategory, hideRadiated]);
+
+            const handleTitleChange = (e) => {
+                setSelectedTitle(e.target.value);
+                setSelectedCategory("");
+            };
+
+            const handleLoadMore = () => {
+                setDisplayLimit(prev => prev + 50);
+            };
+
+            const visibleItems = filteredItems.slice(0, displayLimit);
+            const hasMore = filteredItems.length > displayLimit;
+
+            return (
+                <div className="animate-in fade-in duration-300">
+                    <div className="bg-blue-50 border-l-4 border-am-blue p-4 mb-8 rounded-r-lg">
+                        <h3 className="text-am-blue font-bold text-lg mb-1">Consultation par Intitulé de l'Arrêté</h3>
+                        <p className="text-slate-700 text-sm">
+                            Sélectionnez d'abord un Titre, puis une catégorie pour voir les dispositifs inclus dans le forfait soins.
+                        </p>
+                    </div>
+
+                    <div className="grid md:grid-cols-2 gap-6 mb-8">
+                        <div>
+                            <label htmlFor="title-select" className="block text-sm font-bold text-slate-700 mb-2">
+                                Étape 1 : Choisir le Titre
+                            </label>
+                            <div className="relative">
+                                <select
+                                    id="title-select"
+                                    value={selectedTitle}
+                                    onChange={handleTitleChange}
+                                    className="block w-full p-4 pr-8 bg-white border-2 border-slate-200 rounded-lg text-slate-700 focus:outline-none focus:border-am-blue focus:ring-1 focus:ring-am-blue appearance-none text-lg cursor-pointer shadow-sm hover:border-am-purple transition-colors"
+                                >
+                                    <option value="">-- Sélectionner un Titre --</option>
+                                    {OFFICIAL_STRUCTURE.map((group, index) => (
+                                        <option key={index} value={group.title}>
+                                            {group.title}
+                                        </option>
+                                    ))}
+                                </select>
+                                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-slate-500">
+                                    <ArrowDown className="fill-current h-4 w-4" />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className={!selectedTitle ? "opacity-50" : ""}>
+                            <label htmlFor="category-select" className="block text-sm font-bold text-slate-700 mb-2">
+                                Étape 2 : Choisir l'intitulé (Catégorie)
+                            </label>
+                            <div className="relative">
+                                <select
+                                    id="category-select"
+                                    value={selectedCategory}
+                                    onChange={(e) => setSelectedCategory(e.target.value)}
+                                    disabled={!selectedTitle}
+                                    className="block w-full p-4 pr-8 bg-white border-2 border-slate-200 rounded-lg text-slate-700 focus:outline-none focus:border-am-blue focus:ring-1 focus:ring-am-blue appearance-none text-lg cursor-pointer shadow-sm hover:border-am-purple transition-colors disabled:cursor-not-allowed disabled:bg-slate-100"
+                                >
+                                    <option value="">
+                                        {selectedTitle ? "-- Sélectionner une catégorie --" : "-- En attente du Titre --"}
+                                    </option>
+                                    {availableCategories.map((catName) => (
+                                        <option key={catName} value={catName}>
+                                            {catName}
+                                        </option>
+                                    ))}
+                                </select>
+                                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-slate-500">
+                                    <ArrowDown className="fill-current h-4 w-4" />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {selectedCategory && (
+                        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden animate-in slide-in-from-bottom-4 fade-in duration-300">
+                            {/* EN-TÊTE CORRIGÉ POUR AFFICHAGE LONG */}
+                            <div className="bg-slate-50 p-3 border-b border-slate-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                                <h3 className="font-bold text-am-dark flex items-center gap-2 text-sm flex-1">
+                                    <Bed className="w-4 h-4 text-am-purple shrink-0" />
+                                    <span className="break-words">{selectedCategory}</span>
+                                    <span className="bg-am-blue text-white text-[10px] px-2 py-0.5 rounded-full whitespace-nowrap shrink-0">
+                                        {filteredItems.length} code{filteredItems.length > 1 ? 's' : ''}
+                                    </span>
+                                </h3>
+
+                                <label className="flex items-center gap-2 cursor-pointer group shrink-0">
+                                    <div className="relative flex items-center">
+                                        <input 
+                                            type="checkbox" 
+                                            className="peer sr-only"
+                                            checked={hideRadiated}
+                                            onChange={(e) => setHideRadiated(e.target.checked)}
+                                        />
+                                        <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-am-blue rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-am-blue"></div>
+                                    </div>
+                                    <span className="text-xs font-medium text-slate-700 group-hover:text-am-blue transition-colors">Masquer les radiés</span>
+                                </label>
+                            </div>
+                            
+                            {filteredItems.length > 0 ? (
+                                <div>
+                                    <div className="divide-y divide-slate-100">
+                                        {visibleItems.map((item, idx) => (
+                                            <div key={idx} className="p-2 hover:bg-blue-50/50 transition-colors flex items-center justify-between gap-3">
+                                                <div className="flex items-center gap-3 min-w-0">
+                                                    <span className="shrink-0 font-mono font-bold text-am-blue bg-blue-50 px-2 py-0.5 rounded text-xs border border-blue-100 shadow-sm">
+                                                        {item.code}
+                                                    </span>
+                                                    <h4 className="font-medium text-slate-800 text-sm truncate" title={item.label}>{item.label}</h4>
+                                                </div>
+                                                
+                                                <div className="flex items-center gap-3 shrink-0">
+                                                    {item.endDate && (
+                                                        <span className="text-am-red text-xs font-bold whitespace-nowrap">
+                                                            Code LPP radié depuis le {item.endDate}
+                                                        </span>
+                                                    )}
+
+                                                    <a 
+                                                        href={getDeviceLink(item.code)} 
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="flex items-center gap-1.5 text-xs font-semibold text-am-purple hover:text-white hover:bg-am-purple border border-slate-200 hover:border-am-purple px-3 py-1.5 rounded-md bg-white transition-all group"
+                                                        title="Lien vers la fiche du dispositif"
+                                                    >
+                                                        <span className="hidden sm:inline">Voir fiche</span>
+                                                        <ExternalLink className="w-3 h-3 group-hover:scale-110 transition-transform" />
+                                                    </a>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    
+                                    {hasMore && (
+                                        <div className="p-4 text-center border-t border-slate-100 bg-slate-50">
+                                            <button 
+                                                onClick={handleLoadMore}
+                                                className="px-6 py-2 bg-white border border-slate-300 text-slate-700 font-bold rounded-lg hover:bg-slate-50 hover:border-am-blue hover:text-am-blue transition-all text-sm shadow-sm"
+                                            >
+                                                Afficher les {filteredItems.length - visibleItems.length} suivants...
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            ) : (
+                                <div className="p-8 text-center text-slate-500 italic">
+                                    {hideRadiated ? "Aucun dispositif actif trouvé (les codes radiés sont masqués)." : "Ces dispositifs ne sont pas inscrits dans la LPP."}
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const App = () => {
+            const [activeTab, setActiveTab] = useState('search');
+
+            return (
+                <div className="min-h-screen bg-slate-50 text-slate-800 font-sans p-4 md:p-8">
+                    <div className="max-w-5xl mx-auto">
+                        <Header />
+                        <Tabs activeTab={activeTab} setActiveTab={setActiveTab} />
+                        
+                        {activeTab === 'search' ? <SearchTab /> : <ListingTab />}
+                        
+                        <footer className="text-center text-xs text-slate-400 pb-8 mt-12">
+                            <p className="max-w-2xl mx-auto">
+                                Cet outil est une simulation d'aide à la décision. Veuillez toujours vérifier les mises à jour réglementaires officielles sur le site ameli.fr ou legifrance.gouv.fr.
+                            </p>
+                        </footer>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
